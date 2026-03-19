@@ -503,11 +503,6 @@ Contributions welcome! Focus areas:
 
 ---
 
-## 📞 Support
-
-- **Issues:** GitHub Issues
-- **Email:** support@vidyabot.org
-- **Discord:** Join community server
 
 ---
 
