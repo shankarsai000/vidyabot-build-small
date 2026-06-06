@@ -1,8 +1,9 @@
 """
 Prompt Builder Module
 
-Assembles system and user prompts for Claude.
+Assembles system and user prompts for the LLM backend.
 Respects token budget and optimal prompt structure.
+Works with both Ollama (offline) and Claude (cloud).
 """
 
 import logging
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class PromptBuilder:
-    """Builds optimized prompts for Claude Haiku within token limits."""
+    """Builds optimized prompts within token limits for any LLM backend."""
     
     def __init__(self, grade: int = 8, language: str = "english"):
         """

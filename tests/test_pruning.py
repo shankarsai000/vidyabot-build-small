@@ -22,8 +22,8 @@ class TestContextPruner:
     def test_pruning_result_class(self):
         """Test PruningResult dataclass."""
         chunks = [
-            Chunk(id=1, textbook_id=1, content="Test 1", token_count=50),
-            Chunk(id=2, textbook_id=1, content="Test 2", token_count=60),
+            Chunk(id=1, textbook_id=1, chapter_number=1, chapter_title="Chapter 1", section_title="Section 1", page_number=1, chunk_index=0, content="Test 1", token_count=50),
+            Chunk(id=2, textbook_id=1, chapter_number=1, chapter_title="Chapter 1", section_title="Section 1", page_number=1, chunk_index=1, content="Test 2", token_count=60),
         ]
         
         result = PruningResult(
@@ -174,7 +174,7 @@ class TestStageIsolation:
         bm25 = BM25Index()
         
         # Should not throw error for empty search
-        results = bm25._fallback_search(textbook_id=1, limit=10)
+        results = bm25._fallback_search(textbook_id=1, top_k=10)
         
         assert isinstance(results, list)
     

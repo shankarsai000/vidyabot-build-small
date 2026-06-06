@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 from backend.database import get_db_connection
 from backend.retrieval.context_pruner import ContextPruner
-from backend.llm.claude_client import ClaudeClient
 from backend.llm.prompt_builder import PromptBuilder
 from backend.cache.semantic_cache import get_cache
 from backend.config import settings
@@ -24,6 +23,16 @@ router = APIRouter(prefix="/api", tags=["query"])
 
 # Supported languages for translation
 SUPPORTED_LANGUAGES = ["english", "hindi", "kannada", "telugu", "tamil", "marathi", "bengali"]
+
+
+def get_llm_client():
+    """Factory: returns OllamaClient or ClaudeClient based on config."""
+    if settings.LLM_BACKEND == "ollama":
+        from backend.llm.ollama_client import OllamaClient
+        return OllamaClient()
+    else:
+        from backend.llm.claude_client import ClaudeClient
+        return ClaudeClient()
 
 
 def translate_text(text: str, target_lang: str, source_lang: str = "english") -> Optional[str]:
@@ -200,14 +209,14 @@ async def answer_question(req: QueryRequest) -> QueryResponse:
             pruning_result.chunks
         )
         
-        # ========== Call Claude Haiku ==========
-        llm_client = ClaudeClient()
+        # ========== Call LLM (Ollama or Claude) ==========
+        llm_client = get_llm_client()
         llm_start = time.time()
         
         llm_response = llm_client.ask(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            max_tokens=200
+            max_tokens=256
         )
         
         llm_ms = (time.time() - llm_start) * 1000

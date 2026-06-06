@@ -5,6 +5,18 @@ Main entry point for the backend API.
 Initializes database, loads cache, sets up routes, and runs Uvicorn.
 """
 
+import sys
+import warnings
+
+# Enforce UTF-8 encoding on standard streams to prevent Windows console encoding crashes
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
+# Suppress Gradio's warning about Blocks parameters theme/css moving to launch()
+warnings.filterwarnings("ignore", category=UserWarning, module="gradio")
+
 import logging
 import os
 from pathlib import Path
@@ -15,7 +27,6 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import settings
 from backend.database import init_db, close_db
 from backend.cache.semantic_cache import get_cache
-from backend.llm.claude_client import ClaudeClient
 from backend.api.routes_ingest import router as ingest_router
 from backend.api.routes_query import router as query_router
 from backend.api.routes_stats import router as stats_router
@@ -54,12 +65,22 @@ async def lifespan(app: FastAPI):
         init_db()
         logger.info("✅ Database initialized")
         
-        # Validate API key
-        logger.info("Validating Anthropic API key...")
-        if not ClaudeClient.validate_api_key():
-            logger.warning("⚠️  API key validation failed - some features may not work")
+        # Validate LLM backend
+        if settings.LLM_BACKEND == "ollama":
+            logger.info("Checking Ollama connection...")
+            from backend.llm.ollama_client import OllamaClient
+            ollama_client = OllamaClient()
+            if ollama_client.validate_connection():
+                logger.info("✅ Ollama connected")
+            else:
+                logger.warning("⚠️  Ollama not reachable — start with: ollama serve")
         else:
-            logger.info("✅ API key validated")
+            logger.info("Validating Anthropic API key...")
+            from backend.llm.claude_client import ClaudeClient
+            if not ClaudeClient.validate_api_key():
+                logger.warning("⚠️  API key validation failed — some features may not work")
+            else:
+                logger.info("✅ API key validated")
         
         # Load semantic cache
         logger.info("Loading semantic cache...")
@@ -112,15 +133,6 @@ app.add_middleware(
 )
 
 
-# ========== Mount Frontend ==========
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-    logger.info(f"Mounted frontend from {frontend_path}")
-else:
-    logger.warning(f"Frontend directory not found: {frontend_path}")
-
-
 # ========== Include Routers ==========
 app.include_router(ingest_router)
 app.include_router(query_router)
@@ -148,6 +160,15 @@ async def api_root():
         },
         "documentation": "/docs"
     }
+
+
+# ========== Mount Frontend ==========
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+if os.path.exists(frontend_path):
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    logger.info(f"Mounted frontend from {frontend_path}")
+else:
+    logger.warning(f"Frontend directory not found: {frontend_path}")
 
 
 # ========== Error Handlers ==========

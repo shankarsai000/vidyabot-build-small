@@ -235,7 +235,7 @@ class SemanticCache:
             cache_id = cursor.fetchone()[0]
             
             # Add to FAISS index if not already there
-            if self.faiss_index.ntotal == 0:
+            if self.faiss_index is None or self.faiss_index.ntotal == 0:
                 # Create new index
                 self.faiss_index = faiss.IndexFlatIP(settings.EMBEDDINGS_DIMENSION)
             
@@ -288,6 +288,8 @@ class SemanticCache:
             row = cursor.fetchone()
             
             total_queries = row[0] or 0
+            if total_queries == 0:
+                return {}
             cache_hits = row[1] or 0
             tokens_saved = row[2] or 0
             avg_ratio = row[3] or 0.0

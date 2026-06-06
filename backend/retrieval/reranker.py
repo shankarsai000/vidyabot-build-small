@@ -57,7 +57,7 @@ class CrossEncoderReranker:
                 from sentence_transformers import CrossEncoder
                 # This will download and cache the model (~80MB)
                 self._model = CrossEncoder(self.MODEL_NAME, max_length=512)
-                print(f"✅ CrossEncoder loaded: {self.MODEL_NAME}")
+                print(f"[Reranker] CrossEncoder loaded: {self.MODEL_NAME}")
             except ImportError:
                 raise ImportError("sentence-transformers not installed. Run: pip install sentence-transformers")
         return self._model
@@ -76,7 +76,7 @@ class CrossEncoderReranker:
         dummy_text = "test answer"
         _ = model.predict([[dummy_query, dummy_text]])
         self._warmup_done = True
-        print("✅ CrossEncoder warmup complete")
+        print("[Reranker] CrossEncoder warmup complete")
     
     def rerank(self, query: str, candidate_chunks: List[Chunk], top_k: int = 5) -> List[RankedChunk]:
         """

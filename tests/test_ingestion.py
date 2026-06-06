@@ -75,7 +75,7 @@ class TestPDFParser:
         
         assert len(chunks) > 0
         chunk = chunks[0]
-        assert chunk.chapter_num == 3
+        assert chunk.chapter_number == 3
         assert chunk.chapter_title == 'Photosynthesis'
         assert chunk.section_title == 'Light Reaction'
         assert chunk.page_number == 42

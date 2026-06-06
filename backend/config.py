@@ -21,6 +21,16 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     MODEL_NAME: str = os.getenv("MODEL_NAME", "claude-haiku-4-5-20251001")
     
+    # LLM Backend Selection ("ollama" for offline, "claude" for cloud)
+    LLM_BACKEND: str = os.getenv("LLM_BACKEND", "ollama")
+    
+    # Ollama Configuration (offline-first local inference)
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "mistral:latest")
+    OLLAMA_MAX_TOKENS: int = int(os.getenv("OLLAMA_MAX_TOKENS", "256"))
+    OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+    OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
+    
     # Token & Context Configuration
     MAX_CONTEXT_TOKENS: int = int(os.getenv("MAX_CONTEXT_TOKENS", "512"))
     TOKEN_BUDGET: int = int(os.getenv("MAX_CONTEXT_TOKENS", "512"))  # Alias
@@ -100,7 +110,7 @@ class Settings:
     def validate(cls) -> "Settings":
         """Validate critical settings are set."""
         settings = cls()
-        if not settings.ANTHROPIC_API_KEY:
+        if settings.LLM_BACKEND == "claude" and not settings.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY is not set in environment or .env file")
         return settings
 

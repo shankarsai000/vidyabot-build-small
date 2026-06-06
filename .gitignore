@@ -1,175 +1,33 @@
-# VidyaBot Build Instructions Complete ✅
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-All steps have been successfully created! Here's a summary:
+# C extensions
+*.so
 
-## Project Created: VidyaBot — AI Study Tutor for Indian Students
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-### ✅ All 10 Steps Complete
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+.cache
 
-**STEP 1** — Setup & Config
-- `backend/requirements.txt` with all dependencies
-- `.env.example` template with all settings
-- `backend/config.py` with Settings dataclass
+# IDE files
+.vscode/
+.idea/
 
-**STEP 2** — Database Schema
-- `backend/database.py` with SQLite schema
-- Tables: textbooks, chunks, bm25_index, query_cache, cost_log, faiss_metadata
-- DTOs: Textbook, Chunk, PruningResult, CostLog, LLMResponse
+# OS files
+.DS_Store
+Thumbs.db
 
-**STEP 3** — PDF Ingestion Pipeline
-- `backend/ingestion/pdf_parser.py` — Extracts structured text from PDFs
-- `backend/ingestion/chunker.py` — Intelligent semantic chunking with token limits
-- `backend/ingestion/embedder.py` — MiniLM embeddings (384D, local, CPU-only)
-
-**STEP 4** — Context Pruning Pipeline (CORE)
-- **Stage 1:** `backend/retrieval/bm25_index.py` — BM25 keyword filter (30 results)
-- **Stage 2:** `backend/retrieval/vector_store.py` — FAISS semantic reranker (10 results)
-- **Stage 3:** `backend/retrieval/context_pruner.py` — Token budget enforcer (3 results)
-- **Result:** 2000 → 400 tokens = 80% cost reduction
-
-**STEP 5** — LLM Client & Prompt Builder
-- `backend/llm/claude_client.py` — Anthropic API wrapper with retries
-- `backend/llm/prompt_builder.py` — Curriculum-optimized prompts
-
-**STEP 6** — Semantic Cache
-- `backend/cache/semantic_cache.py` — FAISS-based query deduplication
-- Hit rate: ~40% average | Cost saved on hits: 100% tokens
-
-**STEP 7** — FastAPI Routes
-- `backend/main.py` — FastAPI app with lifespan management & CORS
-- `backend/api/routes_ingest.py` — PDF upload & ingestion
-- `backend/api/routes_query.py` — Question answering with full pipeline
-- `backend/api/routes_stats.py` — Analytics & cost dashboard
-
-**STEP 8** — Frontend PWA
-- `frontend/index.html` — 3-screen SPA (Ask/Upload/Dashboard)
-- `frontend/manifest.json` — PWA metadata
-- `frontend/sw.js` — Service worker for offline support
-- `frontend/css/style.css` — Mobile-first, Indian flag colors
-- `frontend/js/app.js`, `api.js`, `ui.js` — Full app logic
-
-**STEP 9** — Tests
-- `tests/test_ingestion.py` — PDF parsing & chunking tests
-- `tests/test_pruning.py` — 3-stage pipeline tests
-- `tests/test_cache.py` — Cache deduplication tests
-
-**STEP 10** — README & Launch
-- `README.md` — Comprehensive documentation
-- `.gitignore` — Git exclusions
-
----
-
-## 🚀 To Get Started
-
-### 1. Install Dependencies
-```bash
-cd c:\vidyabot\backend
-pip install -r requirements.txt
-```
-
-### 2. Set Up Environment
-```bash
-# Copy template
-copy .env.example .env
-
-# Edit .env with your Anthropic API key
-# ANTHROPIC_API_KEY=sk-...
-```
-
-### 3. Start Backend
-```bash
-cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 4. Open Frontend
-Open browser: http://localhost:8000
-
-### 5. Upload a Textbook (Optional)
-1. Click "📤 Upload"
-2. Select PDF (must be text-based, not scanned)
-3. Fill board/subject/grade
-4. Click "Upload & Process"
-
-### 6. Ask Questions
-1. Select textbook
-2. Type question
-3. Get instant, cost-optimized answer + savings badge
-
----
-
-## 💯 Acceptance Criteria Checklist
-
-- ✅ **POST /api/ingest** — Returns `total_chunks > 0` in <60 seconds
-- ✅ **POST /api/query** — Returns answer with `tokens_used < 600`  
-- ✅ **tokens_saved** — Consistently >1000 (80% reduction proven)
-- ✅ **Cache hit** — Second identical query returns `cache_hit: true`, `tokens_used: 0`
-- ✅ **Frontend** — Loads, shows textbook selector, displays answer + savings
-- ✅ **GET /api/stats** — Shows cumulative savings
-- ✅ **Tests** — All pass with `pytest tests/ -v`
-
----
-
-## 🎯 Key Features
-
-✨ **Context Pruning:**
-- 3-stage pipeline reduces 2000 → 400 tokens
-- BM25 keyword filter (Stage 1)
-- FAISS semantic reranker (Stage 2)
-- Token budget enforcer (Stage 3)
-
-✨ **Cost Optimization:**
-- $0.77 → $0.15 per query (80% savings)
-- Semantic cache deduplication (40% hit rate)
-- Claude Haiku (cheapest model)
-
-✨ **Multi-Language:**
-- English, Hindi, Kannada, Telugu, Tamil, Marathi, Bengali
-- Free Google Translate integration
-
-✨ **Offline-First:**
-- Service worker caching
-- Works offline with cached answers
-- PWA installable
-
-✨ **Production-Ready:**
-- SQLite persistence
-- Cost tracking dashboard
-- Comprehensive logging & error handling
-- Full test coverage
-
----
-
-## 📊 Project Statistics
-
-- **Total Files:** 32
-- **Total Loc:** ~8,000 lines of code
-- **Backend Modules:** 11
-- **API Endpoints:** 8
-- **Frontend Screens:** 3
-- **Databases:** 1 SQLite with 7 tables
-- **Tests:** 30+ test cases
-
----
-
-## 🎓 What You Can Do Now
-
-1. ✅ Upload any state-board textbook (PDF)
-2. ✅ Ask questions & get instant answers
-3. ✅ See how much money you're saving
-4. ✅ Use offline after first load
-5. ✅ Run comprehensive tests
-6. ✅ Deploy to production
-7. ✅ Scale to serve thousands of students
-
----
-
-**VidyaBot is ready for education access across rural India! 🌟**
-
-Make sure to:
-- Set `ANTHROPIC_API_KEY` in `.env`
-- Place PDF textbooks in `data/textbooks/` or upload via Web UI
-- Run tests: `pytest tests/ -v`
-- Open http://localhost:8000 in browser
-
-All files are production-ready with no TODO stubs!
+# Project database & data
+data/*.db
+data/**/*.db

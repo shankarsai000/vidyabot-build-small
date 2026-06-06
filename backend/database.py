@@ -190,7 +190,7 @@ def init_db() -> None:
         pass
     
     conn.commit()
-    print("✅ Database schema initialized successfully")
+    print("[DB] Database schema initialized successfully")
 
 
 def get_db() -> sqlite3.Connection:
@@ -315,8 +315,13 @@ class CostLog:
         self.cache_hit = cache_hit
         self.model_used = model_used
         
-        # Calculate costs (Haiku pricing)
-        self.cost_usd = (actual_tokens_used / 1_000_000) * settings.HAIKU_INPUT_COST_PER_1M
+        # Calculate costs (Haiku pricing for Claude, 0 for local Ollama)
+        is_ollama = (settings.LLM_BACKEND == "ollama") or ("claude" not in model_used.lower())
+        if is_ollama:
+            self.cost_usd = 0.0
+        else:
+            self.cost_usd = (actual_tokens_used / 1_000_000) * settings.HAIKU_INPUT_COST_PER_1M
+            
         baseline_cost = (baseline_tokens / 1_000_000) * settings.HAIKU_INPUT_COST_PER_1M
         self.cost_saved_usd = baseline_cost - self.cost_usd
     
@@ -344,10 +349,14 @@ class LLMResponse:
         self.model = model
         
         # Calculate cost
-        self.cost_usd = (
-            (input_tokens / 1_000_000) * settings.HAIKU_INPUT_COST_PER_1M +
-            (output_tokens / 1_000_000) * settings.HAIKU_OUTPUT_COST_PER_1M
-        )
+        is_ollama = (settings.LLM_BACKEND == "ollama") or ("claude" not in model.lower())
+        if is_ollama:
+            self.cost_usd = 0.0
+        else:
+            self.cost_usd = (
+                (input_tokens / 1_000_000) * settings.HAIKU_INPUT_COST_PER_1M +
+                (output_tokens / 1_000_000) * settings.HAIKU_OUTPUT_COST_PER_1M
+            )
     
     def to_dict(self):
         return {
