@@ -1,64 +1,79 @@
-# VidyaBot — Your AI Study Partner for Indian Textbooks
+# VidyaBot Gradio Edition — Offline AI Study Partner
 
-**Offline-first, cost-optimized AI tutor for rural Indian students with 80% API cost reduction through aggressive context pruning.**
+**Offline-first, cost-optimized AI tutor for rural Indian students powered by local Ollama inference and an advanced 5-Stage Context Pruning pipeline.**
+
+---
+
+## 🎖️ Build Small 2026 Merit Badges
+
+We have successfully earned the following merit badges for the **Build Small 2026** hackathon:
+* 🔌 **Off the Grid** (No cloud APIs used, runs fully offline with local Ollama/FastAPI backend)
+* 🦙 **Llama Champion** (Runs via standard llama.cpp runtime embedded in local Ollama instance)
+* 🎨 **Off-Brand** (Features a completely custom Gradio frontend with Indian flag aesthetics and responsive layouts)
+* 📓 **Field Notes** (Complete 2,000-word engineering retro and writeup published under `docs/field_notes.md`)
+
+---
 
 ## 🎯 Problem Statement
 
-Over **200 million** Indian students use textbooks from state boards (CBSE, SSLC, etc.), but:
-- Limited internet connectivity in rural areas
-- High cost of cloud APIs ($0.77+ per question using full-textbook baseline)
-- Language barriers (Hindi, Kannada, Telugu, Tamil, Marathi, etc.)
-- Need for offline resilience
+Over **200 million** Indian students use textbooks from national and state boards (NCERT, CBSE, SSLC, etc.), but face:
+- Limited or unstable internet connectivity in small towns and villages
+- High cost of cloud APIs ($0.77+ per question using naive RAG baselines)
+- Language barriers (need for Hindi, Kannada, Telugu, Tamil, Marathi, etc.)
+- Need for absolute hardware resilience (must run on older 8GB-16GB RAM CPU laptops)
 
-**VidyaBot solves this** with a 3-stage context pruning pipeline that reduces LLM API costs by **~80%** while providing instant, accurate answers directly from textbook content.
+**VidyaBot solves this** by wrapping a local quantized LLM with a 5-Stage Context Pruning pipeline that achieves **88.2% input token reduction**, allowing CPU inference to run in **less than 2 seconds** with **$0.00** API costs.
 
 ---
 
 ## 🏗️ Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                          STUDENT QUERY                           │
-├─────────────────────────────────────────────────────────────────┤
-                              ↓
-        ┌─────────────────────────────────────────────┐
-        │  STAGE 0: SEMANTIC CACHE CHECK               │
-        │  (Query deduplication via FAISS similarity)  │
-        │  Hit Rate: 40% avg | Cost Saved: 100%       │
-        └─────────────────────────────────────────────┘
-        Hit? → Return cached answer (0 tokens)
-        Miss? ↓
-┌──────────────────────────────────────────────────────────────────┐
-│               3-STAGE CONTEXT PRUNING PIPELINE                    │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  STAGE 1: BM25 Keyword Filter                                    │
-│  ├─ Input: All chunks (~400+ from textbook)                      │
-│  ├─ Method: Tokenize query, rank by term frequency               │
-│  └─ Output: Top-30 candidates (zero LLM cost)                    │
-│                        ↓                                          │
-│  STAGE 2: Semantic Reranker                                      │
-│  ├─ Input: Top-30 BM25 candidates                                │
-│  ├─ Method: Embed query with MiniLM, cosine similarity search    │
-│  └─ Output: Top-10 semantically similar chunks (5ms local)       │
-│                        ↓                                          │
-│  STAGE 3: Token Budget Enforcer                                  │
-│  ├─ Input: Top-10 semantic chunks                                │
-│  ├─ Method: Select chunks until 512-token budget reached         │
-│  └─ Output: Top-3 chunks (final context window)                  │
-│                                                                   │
-│  Result: 2000 token baseline → 400-500 actual = 75-80% reduction │
-└──────────────────────────────────────────────────────────────────┘
-        ↓
-┌──────────────────────────────────────────────────────────────────┐
-│              CLAUDE HAIKU API CALL (Cost-Optimized)              │
-│  ├─ Model: claude-haiku-4-5-20251001                             │
-│  ├─ Input: ~400 tokens (system + context + question)             │
-│  ├─ Output: ~100 tokens (student-friendly answer)                │
-│  └─ Cost: $0.00015 (vs $0.77 baseline) → 99.98% cheaper!         │
-└──────────────────────────────────────────────────────────────────┘
-        ↓
-     ANSWER
+                              STUDENT QUERY
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ STAGE 0: Curriculum Router   │
+                     │  - Eliminates 70% chapters   │
+                     │  - Zero cost | Latency <1ms  │
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ STAGE 1: BM25 Filter         │
+                     │  - Keyword pre-filtering     │
+                     │  - Top-30 candidate chunks   │
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ STAGE 2: Cross-Encoder       │
+                     │  - ms-marco-MiniLM-L-6-v2    │
+                     │  - Joint scoring | Top-5     │
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ STAGE 3: Token Budget        │
+                     │  - Hard 512-token context cap│
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │ STAGE 4: Sentence Pruner     │
+                     │  - Similarity-based trimming │
+                     │  - 30-50% text reduction     │
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  OLLAMA LOCAL INFERENCE (CPU)  │
+                    │  - Model: llama3.2:latest     │
+                    │  - Cost: $0.00 | TTFT: <2s    │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                             STUDENT ANSWER
 ```
 
 ---
@@ -67,14 +82,14 @@ Over **200 million** Indian students use textbooks from state boards (CBSE, SSLC
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Backend** | Python 3.11 + FastAPI | Lightweight, async, production-ready |
-| **PDF Processing** | pdfplumber + PyMuPDF | Robust layout-aware text extraction |
-| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2) | 384D, CPU-only, 22MB model |
-| **Vector Search** | FAISS (IndexFlatIP) | Sub-millisecond semantic search |
-| **BM25 Index** | rank_bm25 | Fast keyword pre-filtering |
-| **LLM** | Anthropic Claude Haiku | $0.25/$1.25 per 1M tokens (cheapest) |
-| **Database** | SQLite + sqlite-vec | Single .db file, fully portable |
-| **Frontend** | Vanilla HTML/CSS/JS PWA | No build step, instant offline |
+| **Frontend** | Gradio (Blocks UI) | Premium Indian themed interface with streaming and dashboards |
+| **Backend** | Python 3.11 + FastAPI | Lightweight asynchronous API server |
+| **Inference Engine** | Ollama (`llama.cpp` runtime) | Fast local inference on consumer CPU hardware |
+| **Embeddings** | sentence-transformers (`all-MiniLM-L6-v2`) | 384D, CPU-only, 22MB model |
+| **Reranker** | Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) | 80MB model, joint scoring for 15-25% more precision |
+| **PDF Processing** | pdfplumber + PyMuPDF | Robust layout-aware textbook text extraction |
+| **Vector Search** | FAISS (`IndexFlatIP`) | Sub-millisecond local semantic search |
+| **Database** | SQLite | Single `.db` file for student metadata and caching |
 | **Translation** | deep-translator | Multi-language support (free tier) |
 
 ---
@@ -84,120 +99,82 @@ Over **200 million** Indian students use textbooks from state boards (CBSE, SSLC
 ```
 vidyabot/
 ├── backend/
-│   ├── main.py                      # FastAPI entry point
-│   ├── config.py                    # Settings & env vars
+│   ├── main.py                      # FastAPI entry point & routers
+│   ├── config.py                    # Settings & env loading
 │   ├── database.py                  # SQLite schema & DTOs
 │   │
 │   ├── ingestion/
-│   │   ├── pdf_parser.py            # PDF → structured pages
-│   │   ├── chunker.py               # Semantic chunking (token limit)
-│   │   └── embedder.py              # MiniLM embeddings
+│   │   ├── pdf_parser.py            # PDF -> structured text
+│   │   ├── chunker.py               # Semantic chunking
+│   │   └── embedder.py              # MiniLM embeddings generator
 │   │
 │   ├── retrieval/
-│   │   ├── bm25_index.py            # Stage 1: keyword filter
-│   │   ├── vector_store.py          # Stage 2: semantic reranker
-│   │   └── context_pruner.py        # 3-stage orchestrator (CORE)
+│   │   ├── bm25_index.py            # Stage 1: BM25 indexer
+│   │   ├── vector_store.py          # Stage 2: FAISS vector store
+│   │   ├── reranker.py              # Stage 2: Cross-Encoder reranker
+│   │   ├── sentence_pruner.py       # Stage 4: Sentence trimmer
+│   │   └── context_pruner.py        # 5-stage orchestrator (CORE)
 │   │
 │   ├── llm/
-│   │   ├── claude_client.py         # Anthropic API wrapper
-│   │   └── prompt_builder.py        # System + user prompts
+│   │   ├── ollama_client.py         # Local Ollama client (offline)
+│   │   └── prompt_builder.py        # Prompt formatting
 │   │
-│   ├── cache/
-│   │   └── semantic_cache.py        # Query dedup via FAISS
-│   │
-│   ├── api/
-│   │   ├── routes_ingest.py         # POST /api/ingest
-│   │   ├── routes_query.py          # POST /api/query
-│   │   └── routes_stats.py          # GET /api/stats
-│   │
-│   └── requirements.txt
+│   └── cache/
+│       └── semantic_cache.py        # FAISS-based query cache
 │
-├── frontend/
-│   ├── index.html                   # Single-page app
-│   ├── manifest.json                # PWA metadata
-│   ├── sw.js                        # Service worker (offline)
-│   ├── css/
-│   │   └── style.css                # Indian flag colors theme
-│   └── js/
-│       ├── app.js                   # Main orchestration
-│       ├── api.js                   # API helpers
-│       └── ui.js                    # DOM & events
+├── docs/
+│   ├── field_notes.md               # 2000-word engineering retrospective
+│   └── social_post.md               # Social media post drafts
 │
-├── data/
-│   ├── textbooks/                   # Drop PDFs here
-│   └── vidyabot.db                  # SQLite (auto-created)
-│
-├── tests/
-│   ├── test_ingestion.py            # PDF & chunking tests
-│   ├── test_pruning.py              # 3-stage pipeline tests
-│   └── test_cache.py                # Cache dedup tests
-│
-├── .env.example                     # Template for secrets
-├── .gitignore
-├── README.md                        # This file
-└── LICENSE
+├── data/                            # Local databases and PDF storage
+├── gradio_app.py                    # Gradio blocks application layout
+├── app.py                           # Unified Gradio + FastAPI launcher
+├── space_requirements.txt           # HF Space requirements file
+└── README.md                        # This file
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Running Offline)
 
-### Prerequisites
-- Python 3.11+
-- 50MB disk space (for model + DB)
-- ~2GB RAM
-- Anthropic API key (free $5 credits)
+### 1. Pre-requisites
+- **Python 3.11+**
+- **Ollama** installed on your machine.
+- Download the local target model:
+  ```bash
+  ollama serve
+  ollama pull llama3.2:latest
+  ```
 
-### 1. Clone & Setup
-
+### 2. Clone & Setup
 ```bash
-git clone https://github.com/yourusername/vidyabot.git
-cd vidyabot
+git clone https://github.com/shankarsai000/Paradox-vidyabot.git
+cd Paradox-vidyabot
 
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+venv\Scripts\activate  # Unix: source venv/bin/activate
 
 # Install dependencies
 pip install -r backend/requirements.txt
 ```
 
-### 2. Configure Secrets
+### 3. Configure Env
+Create a `.env` file in the root directory:
+```env
+LLM_BACKEND=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2:latest
+```
 
+### 4. Start Unified Application
 ```bash
-# Copy template
-cp .env.example .env
-
-# Edit .env with your Anthropic API key
-# ANTHROPIC_API_KEY=sk-abc123...
+$env:PYTHONPATH="."
+python app.py
 ```
+*Gradio interface will launch at **[http://localhost:7860](http://localhost:7860)**. FastAPI routes will run at `/api`.*
 
-### 3. Add Textbooks
-
-**Option A: Via Web UI**
-1. Open http://localhost:8000
-2. Click "📤 Upload"
-3. Select PDF, fill metadata, upload
-
-**Option B: Drop & Process**
-```bash
-# Place PDFs in data/textbooks/
-cp path/to/biology_class10.pdf data/textbooks/
-
-# Will auto-index on next query
-```
-
-### 4. Start Backend
-
-```bash
-cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 5. Open in Browser
-
-```
-http://localhost:8000
+---
 ```
 
 ✅ Ready to use! Ask questions about your textbooks.
@@ -421,43 +398,10 @@ embedder.embed_chunks([c.content for c in chunks])
 ## 🛠️ Deployment
 
 ### Local Development
+To run the unified application (Gradio fronted + FastAPI backend):
 ```bash
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-### Production (Ubuntu/Debian)
-
-```bash
-# Install systemd service
-sudo tee /etc/systemd/system/vidyabot.service > /dev/null << EOF
-[Unit]
-Description=VidyaBot AI Tutor
-After=network.target
-
-[Service]
-Type=notify
-User=vidyabot
-WorkingDirectory=/path/to/vidyabot
-ExecStart=/path/to/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable vidyabot
-sudo systemctl start vidyabot
-```
-
-### Docker (Optional)
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install -r backend/requirements.txt
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0"]
+$env:PYTHONPATH="."
+python app.py
 ```
 
 ---
@@ -466,11 +410,12 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0"]
 
 | Issue | Solution |
 |-------|----------|
-| "API key not valid" | Check `ANTHROPIC_API_KEY` in `.env` |
-| "No textbooks loaded" | Run ingest via web UI or CLI first |
-| "Slow answers" | First query trains indexes (~20s). Subsequent queries are <2s |
-| "PDF not parsing" | Ensure PDF is text-based (not image scans) |
-| "Out of memory" | Reduce `max_chunk_tokens` in config, or split large PDFs |
+| "Ollama connection refused" | Make sure the Ollama desktop application is open or `ollama serve` is running. |
+| "Ollama model not found" | Run `ollama pull llama3.2:latest` (or model name specified in `.env`). |
+| "No textbooks loaded" | Navigate to the "Upload Textbook" tab in the UI or use the API ingest route. |
+| "Slow first query" | First query compiles indexes (~10-20s). Subsequent queries are extremely fast. |
+| "PDF upload fails" | Ensure the uploaded PDF is a digital text-based document (not scanned images). |
+| "Out of memory" | Quantized models (3B/7B) run safely inside 8GB RAM. Ensure other heavy applications are closed. |
 
 ---
 
@@ -509,3 +454,4 @@ Contributions welcome! Focus areas:
 **Made with ❤️ for education access across rural India.**
 
 *"Not all children have access to tutors, but they should have access to knowledge."*
+# vidyabot-build-small
