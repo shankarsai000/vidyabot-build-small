@@ -1,0 +1,36 @@
+# VidyaBot Fine-Tuned Mistral Modelfile
+#
+# This file is used AFTER running modal_convert_gguf.py,
+# which downloads and converts the fine-tuned model to GGUF format.
+#
+# Usage (once GGUF file is present):
+#   ollama create mistral-vidyabot -f backend/llm/models/Modelfile
+#
+# The GGUF path is set by modal_convert_gguf.py automatically.
+# If you need to run manually, update the FROM path below:
+#
+# FROM ./mistral-vidyabot.Q4_K_M.gguf
+
+FROM ./mistral-vidyabot.Q4_K_M.gguf
+
+# Context window — matches VidyaBot's pruning pipeline budget (512 tokens context + 256 output)
+PARAMETER num_ctx 2048
+PARAMETER num_predict 256
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+PARAMETER stop "<s>"
+PARAMETER stop "</s>"
+PARAMETER stop "[INST]"
+PARAMETER stop "[/INST]"
+
+# System prompt — baked into every query for consistent tutoring behaviour
+SYSTEM """You are VidyaBot, an expert AI tutor for Indian school students studying NCERT curriculum (Classes 6-12). Your role is to help students understand concepts clearly.
+
+Guidelines:
+- Give direct, precise answers in 2-4 sentences
+- Use the exact terminology found in NCERT textbooks
+- For science questions: mention the relevant process, formula, or law
+- For math questions: show the key formula or method
+- If the question is in Hindi, answer in Hindi
+- Keep answers concise — students need clarity, not essays"""

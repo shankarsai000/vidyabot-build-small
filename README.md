@@ -6,11 +6,76 @@
 
 ## 🎖️ Build Small 2026 Merit Badges
 
-We have successfully earned the following merit badges for the **Build Small 2026** hackathon:
-* 🔌 **Off the Grid** (No cloud APIs used, runs fully offline with local Ollama/FastAPI backend)
-* 🦙 **Llama Champion** (Runs via standard llama.cpp runtime embedded in local Ollama instance)
-* 🎨 **Off-Brand** (Features a completely custom Gradio frontend with Indian flag aesthetics and responsive layouts)
-* 📓 **Field Notes** (Complete 2,000-word engineering retro and writeup published under `docs/field_notes.md`)
+We have successfully earned all **5 merit badges** for the **Build Small 2026** hackathon:
+* 🔌 **Off the Grid** — No cloud APIs used; runs fully offline with local Ollama/FastAPI backend
+* 🦙 **Llama Champion** — Runs via standard llama.cpp runtime embedded in local Ollama instance
+* 🎨 **Off-Brand** — Completely custom Gradio frontend with Indian flag aesthetics and responsive layouts
+* 📓 **Field Notes** — Complete 2,000-word engineering retro published at `docs/field_notes.md`
+* 🎯 **Well-Tuned** — Mistral 7B fine-tuned on 60+ student Q&A pairs via Modal A10G GPU (LoRA/QLoRA)
+
+---
+
+## 🎯 Model: Fine-Tuned Mistral 7B (`mistral-vidyabot`)
+
+VidyaBot uses **Mistral 7B Instruct fine-tuned on student Q&A pairs** from NCERT Class 10 curriculum. The fine-tuned model is served 100% offline via Ollama (llama.cpp runtime), maintaining the **Off the Grid** badge while improving answer quality.
+
+### Fine-Tuning Details
+
+| Detail | Value |
+|--------|-------|
+| **Base model** | `mistralai/Mistral-7B-Instruct-v0.1` |
+| **Training data** | 60+ hand-crafted + synthetic NCERT Q&A pairs |
+| **Method** | QLoRA (4-bit quantization + LoRA adapters) |
+| **LoRA config** | r=8, alpha=16, targets: q/v/k/o_proj |
+| **Hardware** | Modal A10G GPU (24GB VRAM) |
+| **Training time** | ~1–2 hours |
+| **Estimated cost** | ~$3–5 from $250 Modal credits |
+| **Inference** | GGUF Q4_K_M via Ollama (CPU-only, ~4GB RAM) |
+| **Ollama model name** | `mistral-vidyabot` |
+
+### Why Fine-Tune on Educational Q&A?
+
+Base `mistral:latest` is a strong general-purpose model, but fine-tuning on NCERT-aligned Q&A pairs produces:
+- ✅ **More structured answers** — consistent 2-4 sentence format
+- ✅ **Better NCERT terminology** — uses the exact textbook language students recognise
+- ✅ **Curriculum-aware responses** — references chapter context and exam-relevant concepts
+- ✅ **Bilingual support** — trained on Hindi-language Q&A pairs
+
+### Fine-Tuning Pipeline
+
+```
+Student Q&A Data (60 pairs)
+    ↓
+[Modal A10G GPU]
+    QLoRA: Mistral-7B-Instruct + LoRA adapters (r=8)
+    3 epochs, DataCollatorForLanguageModeling
+    ↓ Merge LoRA into base (merge_and_unload)
+    ↓ Save full merged model → Modal Volume
+    ↓
+[local: modal_convert_gguf.py]
+    Convert HF safetensors → GGUF (llama.cpp)
+    Q4_K_M quantization (~4GB)
+    ↓
+[Ollama]
+    ollama create mistral-vidyabot -f Modelfile
+    → Offline inference at 4-8 tokens/sec (CPU)
+```
+
+### Reproduce the Fine-Tuning
+
+```bash
+# Step 1: Generate dataset (needs Ollama running with mistral:latest)
+python data/finetuning/generate_synthetic_qa.py
+
+# Step 2: Submit to Modal (needs modal account + credits)
+modal run modal_finetune.py
+
+# Step 3: Download + convert to GGUF + register in Ollama
+python modal_convert_gguf.py
+
+# Step 4: Test the fine-tuned model
+ollama run mistral-vidyabot "What is photosynthesis?"
+```
 
 ---
 

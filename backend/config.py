@@ -26,10 +26,15 @@ class Settings:
     
     # Ollama Configuration (offline-first local inference)
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "mistral:latest")
+    # After fine-tuning: use 'mistral-vidyabot' (fine-tuned model).
+    # Before fine-tuning: use 'mistral:latest' (base model).
+    # Set OLLAMA_MODEL in .env to override.
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "mistral-vidyabot")
+    OLLAMA_FALLBACK_MODEL: str = os.getenv("OLLAMA_FALLBACK_MODEL", "mistral:latest")
     OLLAMA_MAX_TOKENS: int = int(os.getenv("OLLAMA_MAX_TOKENS", "256"))
     OLLAMA_TEMPERATURE: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
     OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "60"))
+
     
     # Token & Context Configuration
     MAX_CONTEXT_TOKENS: int = int(os.getenv("MAX_CONTEXT_TOKENS", "512"))

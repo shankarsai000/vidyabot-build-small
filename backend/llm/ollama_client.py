@@ -160,8 +160,18 @@ class OllamaClient:
                 
             except requests.exceptions.HTTPError as e:
                 logger.error(f"Ollama HTTP error: {e}")
-                # If model not found, provide helpful message
+                # If model not found, try falling back to the base model
                 if response.status_code == 404:
+                    fallback = getattr(settings, "OLLAMA_FALLBACK_MODEL", None)
+                    if fallback and fallback != self.model:
+                        logger.warning(
+                            f"Model '{self.model}' not found. "
+                            f"Falling back to '{fallback}'. "
+                            f"To use fine-tuned model: ollama create mistral-vidyabot -f backend/llm/models/Modelfile"
+                        )
+                        self.model = fallback
+                        if attempt < self.MAX_RETRIES - 1:
+                            continue
                     raise RuntimeError(
                         f"Model '{self.model}' not found. "
                         f"Download it with: ollama pull {self.model}"
