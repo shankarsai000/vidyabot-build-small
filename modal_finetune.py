@@ -40,6 +40,10 @@ image = (
         "sentencepiece",
         "protobuf",
     )
+    .add_local_file(
+        "data/finetuning/student_qa.jsonl",
+        remote_path="/data/student_qa.jsonl",
+    )
 )
 
 app = modal.App("vidyabot-finetune", image=image)
@@ -53,13 +57,6 @@ app = modal.App("vidyabot-finetune", image=image)
     gpu="A10G",          # A10G: 24GB VRAM, ~$1.10/hr — cheaper than A100 and enough for 7B
     timeout=3600 * 3,    # 3 hours max
     volumes={MODEL_OUTPUT_DIR: volume},
-    mounts=[
-        # Mount the local dataset file into the container
-        modal.Mount.from_local_file(
-            "data/finetuning/student_qa.jsonl",
-            remote_path="/data/student_qa.jsonl",
-        )
-    ],
 )
 def finetune_mistral():
     """
