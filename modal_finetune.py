@@ -139,14 +139,12 @@ def finetune_mistral():
     print("\n[3/7] Tokenizing dataset...")
 
     def tokenize(examples):
-        tokens = tokenizer(
+        return tokenizer(
             examples["text"],
             truncation=True,
             max_length=512,
             padding=False,  # DataCollator handles dynamic padding
         )
-        tokens["labels"] = tokens["input_ids"].copy()
-        return tokens
 
     tokenized_dataset = dataset.map(
         tokenize,
