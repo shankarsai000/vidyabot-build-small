@@ -213,13 +213,22 @@ def finetune_mistral():
         dataloader_pin_memory=False,
     )
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=tokenized_dataset,
-        data_collator=data_collator,
-        tokenizer=tokenizer,
-    )
+    import transformers
+    
+    trainer_kwargs = {
+        "model": model,
+        "args": training_args,
+        "train_dataset": tokenized_dataset,
+        "data_collator": data_collator,
+    }
+    
+    # In transformers v5, 'tokenizer' parameter in Trainer was renamed to 'processing_class'
+    if hasattr(Trainer, "processing_class") or transformers.__version__.startswith("5."):
+        trainer_kwargs["processing_class"] = tokenizer
+    else:
+        trainer_kwargs["tokenizer"] = tokenizer
+        
+    trainer = Trainer(**trainer_kwargs)
 
     train_result = trainer.train()
     print(f"\n  ✅ Training complete!")
