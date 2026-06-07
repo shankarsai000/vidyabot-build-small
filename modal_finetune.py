@@ -243,7 +243,7 @@ def finetune_mistral():
     print("  📦 Model committed to Modal Volume 'vidyabot-model-output'")
     print("\n" + "=" * 60)
     print("  FINE-TUNING COMPLETE")
-    print("  Next: run `modal volume get vidyabot-model-output mistral-vidyabot-merged .`")
+    print("  Next: run `modal volume get vidyabot-model-output mistral-vidyabot-merged ./backend/llm/models/mistral-vidyabot-hf`")
     print("=" * 60)
 
     return output_path
@@ -287,7 +287,7 @@ def main():
     print(f"   Path: {result}")
     print()
     print("📥 To download the merged model, run:")
-    print("   modal volume get vidyabot-model-output mistral-vidyabot-merged ./backend/llm/models/")
+    print("   modal volume get vidyabot-model-output mistral-vidyabot-merged ./backend/llm/models/mistral-vidyabot-hf")
     print()
     print("🔧 Then convert to GGUF and load into Ollama:")
     print("   python modal_convert_gguf.py")
