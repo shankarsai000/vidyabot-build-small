@@ -16,15 +16,50 @@ import json
 import sys
 import os
 import re
+import requests
 
 # Add project root to path so we can import the backend
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# Ensure console supports utf-8 characters on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 from backend.llm.ollama_client import OllamaClient
 from backend.config import settings
 
 SEED_FILE = os.path.join(os.path.dirname(__file__), "student_qa.jsonl")
 OUTPUT_FILE = SEED_FILE  # We append to the same file
+
+# ──────────────────────────────────────────────
+# Auto-detect the best available Ollama model
+# ──────────────────────────────────────────────
+PREFERRED_MODELS = [
+    "llama3.2:latest",
+    "llama3.2:3b",
+    "gemma2:9b",
+    "gemma2:latest",
+    "mistral:latest",
+    "tinyllama:latest",
+]
+
+def detect_available_model(base_url: str = "http://localhost:11434") -> str:
+    """Return the best available model from Ollama's local library."""
+    try:
+        resp = requests.get(f"{base_url}/api/tags", timeout=5)
+        resp.raise_for_status()
+        available = [m.get("name", "") for m in resp.json().get("models", [])]
+        for preferred in PREFERRED_MODELS:
+            for avail in available:
+                if preferred.split(":")[0] in avail:
+                    return avail
+        if available:
+            return available[0]
+    except Exception:
+        pass
+    return "llama3.2:latest"  # Fallback guess
 
 # ──────────────────────────────────────────────
 # Topics for synthetic Q&A generation
@@ -68,6 +103,36 @@ TOPICS = [
     ("प्रकाश का परावर्तन", "भौतिकी कक्षा 10, अध्याय 10: प्रकाश", "physics_hindi"),
     ("रासायनिक अभिक्रिया के प्रकार", "रसायन विज्ञान कक्षा 10, अध्याय 1", "chemistry_hindi"),
     ("मानव पाचन तंत्र", "जीव विज्ञान कक्षा 10, अध्याय 6", "biology_hindi"),
+    # Additional Biology
+    ("Double circulation in human heart", "Biology Class 10, Chapter 6: Life Processes", "biology"),
+    ("Structure of a neuron", "Biology Class 10, Chapter 7: Control and Coordination", "biology"),
+    ("Binary fission in Amoeba", "Biology Class 10, Chapter 8: How do Organisms Reproduce?", "biology"),
+    ("Difference between self and cross-pollination", "Biology Class 10, Chapter 8: How do Organisms Reproduce?", "biology"),
+    ("Homologous vs analogous organs", "Biology Class 10, Chapter 9: Heredity and Evolution", "biology"),
+    # Additional Physics
+    ("Heating effect of electric current (Joule's Law)", "Physics Class 10, Chapter 12: Electricity", "physics"),
+    ("Fleming's Left Hand Rule", "Physics Class 10, Chapter 13: Magnetic Effects of Electric Current", "physics"),
+    ("Refractive index of a medium", "Physics Class 10, Chapter 10: Light – Reflection and Refraction", "physics"),
+    ("Dispersion of light through a glass prism", "Physics Class 10, Chapter 11: The Human Eye and the Colourful World", "physics"),
+    ("Function of a solar cell", "Physics Class 10, Chapter 14: Sources of Energy", "physics"),
+    # Additional Chemistry
+    ("Exothermic vs endothermic reactions", "Chemistry Class 10, Chapter 1: Chemical Reactions and Equations", "chemistry"),
+    ("Balanced chemical equations", "Chemistry Class 10, Chapter 1: Chemical Reactions and Equations", "chemistry"),
+    ("Plaster of Paris and its preparation", "Chemistry Class 10, Chapter 2: Acids, Bases and Salts", "chemistry"),
+    ("Difference between calcination and roasting", "Chemistry Class 10, Chapter 3: Metals and Non-metals", "chemistry"),
+    ("Homologous series of carbon compounds", "Chemistry Class 10, Chapter 4: Carbon and its Compounds", "chemistry"),
+    ("Saponification reaction", "Chemistry Class 10, Chapter 4: Carbon and its Compounds", "chemistry"),
+    # Additional Mathematics
+    ("Euclid's division lemma", "Mathematics Class 10, Chapter 1: Real Numbers", "math"),
+    ("Finding roots by completing the square", "Mathematics Class 10, Chapter 4: Quadratic Equations", "math"),
+    ("Section formula in coordinate geometry", "Mathematics Class 10, Chapter 7: Coordinate Geometry", "math"),
+    ("Trigonometric identities", "Mathematics Class 10, Chapter 8: Introduction to Trigonometry", "math"),
+    ("Mean, Median, and Mode of grouped data", "Mathematics Class 10, Chapter 14: Statistics", "math"),
+    # Additional Hindi
+    ("ओम का नियम क्या है?", "भौतिकी कक्षा 10, अध्याय 12", "physics_hindi"),
+    ("धातु और अधातु में अंतर", "रसायन विज्ञान कक्षा 10, अध्याय 3", "chemistry_hindi"),
+    ("धमनी और शिरा में अंतर", "जीव विज्ञान कक्षा 10, अध्याय 6", "biology_hindi"),
+    ("ओजोन परत का महत्व", "जीव विज्ञान कक्षा 10, अध्याय 15", "biology_hindi"),
 ]
 
 SYSTEM_PROMPT = """You are an educational content generator for Indian school students.
@@ -120,15 +185,19 @@ def main():
     print("  VidyaBot Synthetic Q&A Generator")
     print("=" * 60)
 
+    # Auto-detect available model
+    model = detect_available_model(settings.OLLAMA_BASE_URL)
+    print(f"🔍 Auto-detected model to use: {model}")
+
     # Check Ollama is available
-    client = OllamaClient(model="mistral:latest", timeout=90)
+    client = OllamaClient(model=model, timeout=90)
     if not client.validate_connection():
         print("\n❌ ERROR: Ollama is not running.")
         print("   Start it with:  ollama serve")
-        print("   Pull the model: ollama pull mistral:latest")
+        print("   And pull a model, e.g.: ollama pull llama3.2:latest")
         sys.exit(1)
 
-    print(f"\n✅ Ollama connected (model: mistral:latest)")
+    print(f"\n✅ Ollama connected (model: {model})")
 
     # Load existing data to avoid duplicates
     existing_questions = load_existing(SEED_FILE)
