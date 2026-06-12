@@ -12,3 +12,4 @@ data/*.db
 data/textbooks/*
 backend/llm/models/mistral-vidyabot-hf/
 backend/llm/models/llama.cpp/
+*.gguf

@@ -54,4 +54,5 @@ app = gr.mount_gradio_app(fastapi_app, demo, path="/")
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    host = "127.0.0.1" if sys.platform == "win32" else "0.0.0.0"
+    uvicorn.run("app:app", host=host, port=port, reload=False)

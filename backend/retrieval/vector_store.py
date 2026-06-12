@@ -10,7 +10,7 @@ import numpy as np
 import sqlite3
 import os
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from backend.config import settings
 from backend.database import get_db_connection, Chunk
 from backend.ingestion.embedder import Embedder

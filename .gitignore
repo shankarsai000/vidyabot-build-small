@@ -31,3 +31,8 @@ Thumbs.db
 # Project database & data
 data/*.db
 data/**/*.db
+
+# Large model files and directories
+backend/llm/models/llama.cpp/
+backend/llm/models/mistral-vidyabot-hf/
+*.gguf
