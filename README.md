@@ -11,7 +11,7 @@ We have successfully earned all **5 merit badges** for the **Build Small 2026** 
 * 🦙 **Llama Champion** — Runs via standard llama.cpp runtime embedded in local Ollama instance
 * 🎨 **Off-Brand** — Completely custom Gradio frontend with Indian flag aesthetics and responsive layouts
 * 📓 **Field Notes** — Complete 2,000-word engineering retro published at `docs/field_notes.md`
-* 🎯 **Well-Tuned** — Mistral 7B fine-tuned on 60+ student Q&A pairs via Modal A10G GPU (LoRA/QLoRA)
+* 🎯 **Well-Tuned** — Mistral 7B fine-tuned on 103 student Q&A pairs via Modal A10G GPU (LoRA/QLoRA)
 
 ---
 
@@ -24,7 +24,7 @@ VidyaBot uses **Mistral 7B Instruct fine-tuned on student Q&A pairs** from NCERT
 | Detail | Value |
 |--------|-------|
 | **Base model** | `mistralai/Mistral-7B-Instruct-v0.1` |
-| **Training data** | 60+ hand-crafted + synthetic NCERT Q&A pairs |
+| **Training data** | 103 hand-crafted + synthetic NCERT Q&A pairs |
 | **Method** | QLoRA (4-bit quantization + LoRA adapters) |
 | **LoRA config** | r=8, alpha=16, targets: q/v/k/o_proj |
 | **Hardware** | Modal A10G GPU (24GB VRAM) |
@@ -44,7 +44,7 @@ Base `mistral:latest` is a strong general-purpose model, but fine-tuning on NCER
 ### Fine-Tuning Pipeline
 
 ```
-Student Q&A Data (60 pairs)
+Student Q&A Data (103 pairs)
     ↓
 [Modal A10G GPU]
     QLoRA: Mistral-7B-Instruct + LoRA adapters (r=8)
@@ -133,7 +133,7 @@ Over **200 million** Indian students use textbooks from national and state board
                                     ▼
                     ┌───────────────────────────────┐
                     │  OLLAMA LOCAL INFERENCE (CPU)  │
-                    │  - Model: llama3.2:latest     │
+                    │  - Model: mistral-vidyabot    │
                     │  - Cost: $0.00 | TTFT: <2s    │
                     └───────────────┬───────────────┘
                                     │
@@ -229,7 +229,7 @@ Create a `.env` file in the root directory:
 ```env
 LLM_BACKEND=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:latest
+OLLAMA_MODEL=mistral-vidyabot
 ```
 
 ### 4. Start Unified Application

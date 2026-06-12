@@ -1,38 +1,34 @@
 """
-modal_convert_gguf.py — Download + Convert Fine-Tuned Model to GGUF
+modal_convert_gguf.py — Download GGUF from Modal Volume & Register with Ollama
 
 Run this AFTER modal_finetune.py completes.
 
 Steps:
-1. Download merged model from Modal Volume to local disk
-2. Clone llama.cpp (for the conversion script)
-3. Convert HuggingFace safetensors → GGUF (Q4_K_M quantization)
-4. Place GGUF file where Ollama can read it
+1. Download the quantized GGUF model directly from Modal Volume to local disk
+2. Create/update the Ollama model pointing to the downloaded GGUF file
 
-Usage (from project root, after fine-tuning completes):
+Usage (from project root):
     python modal_convert_gguf.py
-
-Requirements:
-    pip install modal
-    pip install huggingface-hub
-    Git + cmake available (for llama.cpp build)
 """
 
 import subprocess
 import sys
-import os
 from pathlib import Path
+
+# Enforce UTF-8 encoding on standard streams to prevent Windows console encoding crashes
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 
 # ──────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────
 VOLUME_NAME = "vidyabot-model-output"
-REMOTE_MODEL_PATH = "mistral-vidyabot-merged"
+REMOTE_GGUF_FILENAME = "mistral-vidyabot.Q4_K_M.gguf"
 LOCAL_MODELS_DIR = Path("backend/llm/models")
-LOCAL_HF_MODEL_DIR = LOCAL_MODELS_DIR / "mistral-vidyabot-hf"
-LOCAL_GGUF_PATH = LOCAL_MODELS_DIR / "mistral-vidyabot.Q4_K_M.gguf"
-LLAMACPP_DIR = LOCAL_MODELS_DIR / "llama.cpp"
+LOCAL_GGUF_PATH = LOCAL_MODELS_DIR / REMOTE_GGUF_FILENAME
 
 
 def run(cmd: str, cwd: Path = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -49,93 +45,38 @@ def run(cmd: str, cwd: Path = None, check: bool = True) -> subprocess.CompletedP
 
 
 def step1_download_from_modal():
-    """Download the merged HF model from Modal Volume to local disk."""
-    print("\n[1/4] Downloading merged model from Modal Volume...")
-    LOCAL_HF_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Use the Modal CLI to download
-    cmd = (
-        f"modal volume get {VOLUME_NAME} "
-        f"{REMOTE_MODEL_PATH} {LOCAL_HF_MODEL_DIR}"
-    )
-    run(cmd)
-    print(f"  ✅ Model downloaded to: {LOCAL_HF_MODEL_DIR}")
-
-
-def step2_get_llamacpp():
-    """Clone or update llama.cpp for the GGUF conversion script."""
-    print("\n[2/4] Setting up llama.cpp conversion tools...")
+    """Download the GGUF model file from Modal Volume to local disk."""
+    print(f"\n[1/2] Downloading GGUF model '{REMOTE_GGUF_FILENAME}' from Modal Volume '{VOLUME_NAME}'...")
     LOCAL_MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not LLAMACPP_DIR.exists():
-        run(
-            f"git clone --depth 1 https://github.com/ggerganov/llama.cpp {LLAMACPP_DIR}",
-            cwd=LOCAL_MODELS_DIR
-        )
-        # Install conversion script requirements
-        req_file = LLAMACPP_DIR / "requirements.txt"
-        if req_file.exists():
-            run(f"{sys.executable} -m pip install -r {req_file}", check=False)
-        print(f"  ✅ llama.cpp cloned to: {LLAMACPP_DIR}")
+    # Use the Modal CLI in the virtual environment if available
+    python_dir = Path(sys.executable).parent
+    modal_bin = python_dir / "modal.exe" if (python_dir / "modal.exe").exists() else (python_dir / "modal" if (python_dir / "modal").exists() else "modal")
+
+    cmd = (
+        f'"{modal_bin}" volume get {VOLUME_NAME} '
+        f"{REMOTE_GGUF_FILENAME} {LOCAL_MODELS_DIR}"
+    )
+    run(cmd)
+    
+    # Check if download succeeded
+    if LOCAL_GGUF_PATH.exists():
+        print(f"  ✅ Model downloaded successfully to: {LOCAL_GGUF_PATH}")
     else:
-        print(f"  ✅ llama.cpp already present at: {LLAMACPP_DIR}")
-
-
-def step3_convert_to_gguf():
-    """Convert HuggingFace safetensors model to GGUF format."""
-    print("\n[3/4] Converting HuggingFace model to GGUF (Q4_K_M)...")
-
-    convert_script = LLAMACPP_DIR / "convert_hf_to_gguf.py"
-    if not convert_script.exists():
-        # Older llama.cpp uses convert.py
-        convert_script = LLAMACPP_DIR / "convert.py"
-    if not convert_script.exists():
-        print("  ❌ llama.cpp conversion script not found.")
-        print("     Try: pip install llama-cpp-python and skip this step.")
+        print(f"  ❌ GGUF file not found at {LOCAL_GGUF_PATH} after download.")
         sys.exit(1)
 
-    LOCAL_GGUF_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # Step A: Convert to unquantized GGUF first
-    unquantized_gguf = LOCAL_MODELS_DIR / "mistral-vidyabot-f16.gguf"
-    run(
-        f"{sys.executable} {convert_script} "
-        f"{LOCAL_HF_MODEL_DIR} "
-        f"--outfile {unquantized_gguf} "
-        f"--outtype f16"
-    )
-    print(f"  ✅ Unquantized GGUF created: {unquantized_gguf}")
-
-    # Step B: Quantize to Q4_K_M (4-bit, ~4GB, optimal for CPU inference)
-    # Try llama-quantize binary if built, otherwise use Python-based quantization
-    quantize_bin = LLAMACPP_DIR / "build" / "bin" / "llama-quantize"
-    if not quantize_bin.exists():
-        quantize_bin = LLAMACPP_DIR / "quantize"  # Older path
-
-    if quantize_bin.exists():
-        run(f"{quantize_bin} {unquantized_gguf} {LOCAL_GGUF_PATH} Q4_K_M")
-        # Clean up unquantized file
-        unquantized_gguf.unlink(missing_ok=True)
-        print(f"  ✅ Quantized to Q4_K_M: {LOCAL_GGUF_PATH}")
-    else:
-        # Skip quantization — use f16 directly (larger but works)
-        print("  ⚠️  llama-quantize binary not found — using f16 GGUF (larger, ~13GB)")
-        print("     To build quantize: cd backend/llm/models/llama.cpp && cmake -B build && cmake --build build -t llama-quantize")
-        LOCAL_GGUF_PATH = unquantized_gguf
-        print(f"  ✅ Using f16 GGUF: {LOCAL_GGUF_PATH}")
-
-    return LOCAL_GGUF_PATH
-
-
-def step4_create_ollama_model(gguf_path: Path):
-    """Create the Ollama model from the GGUF file."""
-    print("\n[4/4] Creating Ollama model 'mistral-vidyabot'...")
+def step2_create_ollama_model():
+    """Create the Ollama model from the downloaded GGUF file."""
+    print("\n[2/2] Creating Ollama model 'mistral-vidyabot'...")
 
     modelfile_path = LOCAL_MODELS_DIR / "Modelfile"
 
     # Write the Modelfile pointing to our GGUF
-    # Use absolute path for FROM directive
-    abs_gguf = gguf_path.resolve()
+    abs_gguf = LOCAL_GGUF_PATH.resolve()
+    
+    # Check if Modelfile exists and update it
     modelfile_content = f"""FROM {abs_gguf}
 
 # VidyaBot fine-tuned model parameters
@@ -143,6 +84,10 @@ PARAMETER num_ctx 2048
 PARAMETER temperature 0.7
 PARAMETER top_p 0.9
 PARAMETER repeat_penalty 1.1
+PARAMETER stop "<s>"
+PARAMETER stop "</s>"
+PARAMETER stop "[INST]"
+PARAMETER stop "[/INST]"
 
 # System prompt baked into the model
 SYSTEM "You are VidyaBot, an expert AI tutor for Indian school students studying NCERT curriculum. You give clear, concise, and accurate answers in 2-4 sentences. Always use correct scientific or mathematical terminology as found in NCERT textbooks."
@@ -166,31 +111,31 @@ SYSTEM "You are VidyaBot, an expert AI tutor for Indian school students studying
 
 def main():
     print("=" * 60)
-    print("  VidyaBot GGUF Conversion Pipeline")
-    print("  Modal → HuggingFace → GGUF → Ollama")
+    print("  VidyaBot GGUF Download & Registration Pipeline")
+    print("  Modal Volume -> Local GGUF -> Ollama")
     print("=" * 60)
 
     # Check if model already downloaded locally
-    if LOCAL_HF_MODEL_DIR.exists() and any(LOCAL_HF_MODEL_DIR.iterdir()):
-        print(f"\n  ✅ Model already downloaded at: {LOCAL_HF_MODEL_DIR}")
-        skip = input("  Skip download step? [Y/n]: ").strip().lower()
+    if LOCAL_GGUF_PATH.exists():
+        print(f"\n  ✅ GGUF Model already exists at: {LOCAL_GGUF_PATH}")
+        if not sys.stdin.isatty():
+            print("  Non-interactive mode detected. Skipping download step...")
+            skip = "y"
+        else:
+            skip = input("  Skip download step? [Y/n]: ").strip().lower()
         if skip != "n":
             print("  Skipping download...")
-            step2_get_llamacpp()
-            gguf_path = step3_convert_to_gguf()
-            step4_create_ollama_model(gguf_path)
+            step2_create_ollama_model()
             return
 
     step1_download_from_modal()
-    step2_get_llamacpp()
-    gguf_path = step3_convert_to_gguf()
-    step4_create_ollama_model(gguf_path)
+    step2_create_ollama_model()
 
     print("\n" + "=" * 60)
     print("  ✅ ALL STEPS COMPLETE")
     print()
     print("  Your fine-tuned model is ready:")
-    print(f"  GGUF: {gguf_path}")
+    print(f"  GGUF: {LOCAL_GGUF_PATH}")
     print(f"  Ollama: mistral-vidyabot")
     print()
     print("  Update your .env file:")

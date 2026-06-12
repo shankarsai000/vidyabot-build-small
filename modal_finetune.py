@@ -28,6 +28,7 @@ MODEL_OUTPUT_DIR = "/model-output"
 # Container image with all ML dependencies
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install("git", "build-essential", "cmake")
     .pip_install(
         "transformers>=4.40.0",
         "torch>=2.2.0",
@@ -39,6 +40,7 @@ image = (
         "scipy",
         "sentencepiece",
         "protobuf",
+        "gguf>=0.1.0",
     )
     .add_local_file(
         "data/finetuning/student_qa.jsonl",
@@ -233,27 +235,94 @@ def finetune_mistral():
     print(f"     Loss: {train_result.training_loss:.4f}")
     print(f"     Runtime: {train_result.metrics.get('train_runtime', 0):.0f}s")
 
-    # ── Step 7: Merge LoRA into base model + save ─────────────
-    print(f"\n[7/7] Merging LoRA weights and saving to {MODEL_OUTPUT_DIR}...")
+    # ── Step 7: Merge LoRA into base model + GGUF Conversion ─────────────
+    print(f"\n[7/7] Merging LoRA weights and converting to GGUF format...")
 
-    # Merge LoRA into base model for full weights (needed for GGUF conversion)
-    merged_model = model.merge_and_unload()
+    # Save the adapter first (PEFT)
+    adapter_path = "/tmp/vidyabot-adapter"
+    model.save_pretrained(adapter_path)
+    print(f"  ✅ PEFT adapter saved to: {adapter_path}")
 
-    output_path = f"{MODEL_OUTPUT_DIR}/mistral-vidyabot-merged"
-    merged_model.save_pretrained(output_path, safe_serialization=True)
-    tokenizer.save_pretrained(output_path)
+    # Free memory of the 4-bit model to avoid OOM
+    del model
+    del trainer
+    import gc
+    gc.collect()
+    torch.cuda.empty_cache()
 
-    # Commit to Modal Volume
+    # Load base model in float16 (unquantized) to merge
+    print("\n  Loading base model in float16 to merge LoRA adapters...")
+    from peft import PeftModel
+    base_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        device_map="auto",
+    )
+    peft_model = PeftModel.from_pretrained(base_model, adapter_path)
+    print("  Merging weights...")
+    merged_model = peft_model.merge_and_unload()
+
+    # Save to /tmp to avoid Volume size exhaustion
+    temp_merged_path = "/tmp/mistral-vidyabot-merged"
+    print(f"  Saving merged float16 model to {temp_merged_path}...")
+    merged_model.save_pretrained(temp_merged_path, safe_serialization=True)
+    tokenizer.save_pretrained(temp_merged_path)
+
+    # Free memory again before starting conversion/quantization
+    del merged_model
+    del peft_model
+    del base_model
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # Clone llama.cpp to /tmp
+    print("\n  Cloning llama.cpp for GGUF conversion...")
+    import subprocess
+    subprocess.run(
+        "git clone --depth 1 https://github.com/ggerganov/llama.cpp /tmp/llama.cpp",
+        shell=True,
+        check=True
+    )
+
+    # Convert HF to GGUF f16
+    temp_gguf_f16 = "/tmp/mistral-vidyabot-f16.gguf"
+    print(f"\n  Converting HF model to GGUF f16: {temp_gguf_f16}...")
+    subprocess.run(
+        f"python /tmp/llama.cpp/convert_hf_to_gguf.py {temp_merged_path} "
+        f"--outfile {temp_gguf_f16} --outtype f16",
+        shell=True,
+        check=True
+    )
+
+    # Compile llama-quantize
+    print("\n  Compiling llama-quantize tool...")
+    subprocess.run(
+        "cmake -B /tmp/llama.cpp/build -S /tmp/llama.cpp -DCMAKE_BUILD_TYPE=Release && "
+        "cmake --build /tmp/llama.cpp/build --config Release --target llama-quantize",
+        shell=True,
+        check=True
+    )
+
+    # Quantize to Q4_K_M and save directly to persistent volume!
+    final_gguf_path = f"{MODEL_OUTPUT_DIR}/mistral-vidyabot.Q4_K_M.gguf"
+    print(f"\n  Quantizing GGUF f16 -> Q4_K_M: {final_gguf_path}...")
+    subprocess.run(
+        f"/tmp/llama.cpp/build/bin/llama-quantize {temp_gguf_f16} {final_gguf_path} Q4_K_M",
+        shell=True,
+        check=True
+    )
+
+    # Commit Volume
     volume.commit()
 
-    print(f"\n  ✅ Merged model saved to: {output_path}")
-    print("  📦 Model committed to Modal Volume 'vidyabot-model-output'")
+    print(f"\n  ✅ Merged model successfully quantized to GGUF!")
+    print(f"  📦 GGUF model committed to Modal Volume 'vidyabot-model-output'")
     print("\n" + "=" * 60)
-    print("  FINE-TUNING COMPLETE")
-    print("  Next: run `modal volume get vidyabot-model-output mistral-vidyabot-merged ./backend/llm/models/mistral-vidyabot-hf`")
+    print("  FINE-TUNING & GGUF CONVERSION COMPLETE")
+    print("  Next: run `python modal_convert_gguf.py` to download the GGUF file")
     print("=" * 60)
 
-    return output_path
+    return final_gguf_path
 
 
 # ──────────────────────────────────────────────────────────────
@@ -290,11 +359,8 @@ def main():
     print()
 
     result = finetune_mistral.remote()
-    print(f"\n✅ Job complete! Weights saved to Modal Volume.")
+    print(f"\n✅ Job complete! GGUF Model saved to Modal Volume.")
     print(f"   Path: {result}")
     print()
-    print("📥 To download the merged model, run:")
-    print("   modal volume get vidyabot-model-output mistral-vidyabot-merged ./backend/llm/models/mistral-vidyabot-hf")
-    print()
-    print("🔧 Then convert to GGUF and load into Ollama:")
+    print("📥 To download the GGUF model and set up Ollama, run:")
     print("   python modal_convert_gguf.py")
