@@ -1,3 +1,12 @@
+---
+title: VidyaBot Gradio
+emoji: 📚
+colorFrom: yellow
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # VidyaBot Gradio Edition — Offline AI Study Partner
 
 **Offline-first, cost-optimized AI tutor for rural Indian students powered by local Ollama inference and an advanced 5-Stage Context Pruning pipeline.**
