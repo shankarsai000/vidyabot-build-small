@@ -4,6 +4,7 @@ Ollama LLM Client Module
 Wrapper around local Ollama inference server for offline-first AI tutoring.
 Drop-in replacement for ClaudeClient — same interface, same LLMResponse DTO.
 Uses llama.cpp runtime via Ollama for ≤32B parameter models.
+Robustly falls back to Claude, HF Inference API, or a structured local Mock Reader so it always runs.
 """
 
 import logging
@@ -11,6 +12,8 @@ import time
 import asyncio
 import requests
 import json
+import re
+import os
 from typing import Optional, Dict, Generator
 from backend.config import settings
 from backend.database import LLMResponse
@@ -19,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
-    """Communicates with local Ollama server for offline inference."""
+    """Communicates with local Ollama server, with cascading cloud and mock fallbacks."""
     
     # Retry configuration
     MAX_RETRIES = 3
@@ -75,9 +78,7 @@ class OllamaClient:
             max_tokens: int = 256) -> LLMResponse:
         """
         Ask Ollama a question with retries and error handling.
-        
-        Uses the /api/chat endpoint for proper system/user message separation.
-        Falls back to /api/generate with combined prompt if chat fails.
+        Falls back to Claude API, Hugging Face Inference API, or Mock Reader if offline.
         
         Args:
             system_prompt: System context/instructions
@@ -89,113 +90,115 @@ class OllamaClient:
         """
         max_tokens = max_tokens or self.max_tokens
         
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                logger.debug(f"Calling Ollama API (attempt {attempt + 1}/{self.MAX_RETRIES})")
-                
-                start_time = time.time()
-                
-                # Use /api/chat for proper message roles
-                payload = {
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "stream": False,
-                    "options": {
-                        "num_predict": max_tokens,
-                        "temperature": self.temperature
+        # Check if local Ollama is responsive
+        ollama_failed = False
+        try:
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=2)
+            if resp.status_code != 200:
+                ollama_failed = True
+        except Exception:
+            ollama_failed = True
+            
+        if not ollama_failed:
+            for attempt in range(self.MAX_RETRIES):
+                try:
+                    logger.debug(f"Calling Ollama API (attempt {attempt + 1}/{self.MAX_RETRIES})")
+                    
+                    start_time = time.time()
+                    
+                    payload = {
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "stream": False,
+                        "options": {
+                            "num_predict": max_tokens,
+                            "temperature": self.temperature
+                        }
                     }
-                }
-                
-                response = requests.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-                
-                result = response.json()
-                elapsed = time.time() - start_time
-                
-                # Extract response
-                answer = result.get("message", {}).get("content", "")
-                
-                # Ollama provides token counts in eval_count / prompt_eval_count
-                input_tokens = result.get("prompt_eval_count", self.estimate_tokens(system_prompt + user_prompt))
-                output_tokens = result.get("eval_count", self.estimate_tokens(answer))
-                
-                logger.info(
-                    f"✅ Ollama response in {elapsed:.1f}s: {input_tokens} input tokens, "
-                    f"{output_tokens} output tokens (model: {self.model})"
-                )
-                
-                return LLMResponse(
-                    answer=answer,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    model=self.model
-                )
-                
-            except requests.exceptions.ConnectionError as e:
-                logger.error(f"Cannot connect to Ollama at {self.base_url}. Is 'ollama serve' running?")
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(self.RETRY_DELAY_SECONDS)
-                    continue
-                raise RuntimeError(
-                    f"Ollama not reachable at {self.base_url}. "
-                    f"Start it with: ollama serve"
-                ) from e
-                
-            except requests.exceptions.Timeout as e:
-                logger.warning(f"Ollama request timed out after {self.timeout}s, retrying...")
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(self.RETRY_DELAY_SECONDS)
-                    continue
-                raise RuntimeError(
-                    f"Ollama timed out after {self.timeout}s. "
-                    f"The model may be loading — try again."
-                ) from e
-                
-            except requests.exceptions.HTTPError as e:
-                logger.error(f"Ollama HTTP error: {e}")
-                # If model not found, try falling back to the base model
-                if response.status_code == 404:
-                    fallback = getattr(settings, "OLLAMA_FALLBACK_MODEL", None)
-                    if fallback and fallback != self.model:
-                        logger.warning(
-                            f"Model '{self.model}' not found. "
-                            f"Falling back to '{fallback}'. "
-                            f"To use fine-tuned model: ollama create mistral-vidyabot -f backend/llm/models/Modelfile"
-                        )
-                        self.model = fallback
-                        if attempt < self.MAX_RETRIES - 1:
-                            continue
-                    raise RuntimeError(
-                        f"Model '{self.model}' not found. "
-                        f"Download it with: ollama pull {self.model}"
-                    ) from e
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(self.RETRY_DELAY_SECONDS)
-                    continue
-                raise
-                
-            except Exception as e:
-                logger.error(f"Ollama inference error: {e}")
-                if attempt < self.MAX_RETRIES - 1:
-                    time.sleep(self.RETRY_DELAY_SECONDS)
-                    continue
-                raise RuntimeError(f"Ollama inference failed: {e}") from e
+                    
+                    response = requests.post(
+                        f"{self.base_url}/api/chat",
+                        json=payload,
+                        timeout=self.timeout
+                    )
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    elapsed = time.time() - start_time
+                    
+                    answer = result.get("message", {}).get("content", "")
+                    input_tokens = result.get("prompt_eval_count", self.estimate_tokens(system_prompt + user_prompt))
+                    output_tokens = result.get("eval_count", self.estimate_tokens(answer))
+                    
+                    logger.info(
+                        f"✅ Ollama response in {elapsed:.1f}s: {input_tokens} input tokens, "
+                        f"{output_tokens} output tokens (model: {self.model})"
+                    )
+                    
+                    return LLMResponse(
+                        answer=answer,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        model=self.model
+                    )
+                    
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"Ollama HTTP error: {e}")
+                    if response.status_code == 404:
+                        fallback = getattr(settings, "OLLAMA_FALLBACK_MODEL", None)
+                        if fallback and fallback != self.model:
+                            logger.warning(f"Model '{self.model}' not found. Falling back to '{fallback}'...")
+                            self.model = fallback
+                            if attempt < self.MAX_RETRIES - 1:
+                                continue
+                    if attempt < self.MAX_RETRIES - 1:
+                        time.sleep(self.RETRY_DELAY_SECONDS)
+                        continue
+                        
+                except Exception as e:
+                    logger.error(f"Ollama inference error (attempt {attempt + 1}): {e}")
+                    if attempt < self.MAX_RETRIES - 1:
+                        time.sleep(self.RETRY_DELAY_SECONDS)
+                        continue
         
-        raise RuntimeError("Failed to get response from Ollama after retries")
+        # Local Ollama failed. Attempt fallbacks.
+        logger.warning("Local Ollama failed or offline. Attempting fallback providers...")
+        
+        # 1. Try Claude if API Key is configured
+        claude_resp = self._call_claude_fallback(system_prompt, user_prompt, max_tokens)
+        if claude_resp:
+            logger.info("✅ Fallback to Claude API successful")
+            return claude_resp
+            
+        # 2. Try Hugging Face Serverless Inference API
+        hf_answer = self._call_hf_inference_api(system_prompt, user_prompt, max_tokens)
+        if hf_answer:
+            logger.info("✅ Fallback to HF Inference API successful")
+            return LLMResponse(
+                answer=hf_answer,
+                input_tokens=self.estimate_tokens(system_prompt + user_prompt),
+                output_tokens=self.estimate_tokens(hf_answer),
+                model="Qwen/Qwen2.5-7B-Instruct (HF API)"
+            )
+            
+        # 3. Fallback to Textbook Excerpt Reader (Mock Offline Mode)
+        logger.warning("All AI providers failed or offline. Falling back to Mock Offline Reader.")
+        mock_answer = self._get_mock_offline_response(user_prompt)
+        return LLMResponse(
+            answer=mock_answer,
+            input_tokens=self.estimate_tokens(system_prompt + user_prompt),
+            output_tokens=self.estimate_tokens(mock_answer),
+            model="Offline Textbook Reader (Fallback)"
+        )
     
     def generate_stream(self, system_prompt: str, user_prompt: str,
                         max_tokens: int = 256) -> Generator[str, None, None]:
         """
         Stream response for real-time Gradio UI updates.
-        
-        Yields tokens as they are generated for immediate display.
+        Falls back gracefully if local Ollama is offline.
         
         Args:
             system_prompt: System context/instructions
@@ -207,43 +210,222 @@ class OllamaClient:
         """
         max_tokens = max_tokens or self.max_tokens
         
+        # Check if local Ollama is responsive
+        ollama_failed = False
+        try:
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=2)
+            if resp.status_code != 200:
+                ollama_failed = True
+        except Exception:
+            ollama_failed = True
+            
+        if not ollama_failed:
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "stream": True,
+                "options": {
+                    "num_predict": max_tokens,
+                    "temperature": self.temperature
+                }
+            }
+            
+            try:
+                response = requests.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=self.timeout,
+                    stream=True
+                )
+                response.raise_for_status()
+                
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            token = data.get("message", {}).get("content", "")
+                            if token:
+                                yield token
+                        except json.JSONDecodeError:
+                            continue
+                return  # Stream completed successfully
+            except Exception as e:
+                logger.warning(f"Ollama streaming failed: {e}. Trying fallbacks...")
+        
+        # Try cloud or mock fallbacks
+        # 1. Claude Fallback
+        if settings.ANTHROPIC_API_KEY:
+            try:
+                from backend.llm.claude_client import ClaudeClient
+                claude = ClaudeClient()
+                resp = claude.ask(system_prompt, user_prompt, max_tokens)
+                yield resp.answer
+                return
+            except Exception as e:
+                logger.warning(f"Claude streaming fallback failed: {e}")
+                
+        # 2. HF Inference API Fallback
+        hf_success = False
+        try:
+            for token in self._stream_hf_inference_api(system_prompt, user_prompt, max_tokens):
+                hf_success = True
+                yield token
+            if hf_success:
+                return
+        except Exception as e:
+            logger.warning(f"HF Inference API streaming fallback failed: {e}")
+            
+        # 3. Direct Textbook Reader (Mock Offline Mode)
+        yield "📢 **[Offline Reader Mode]**\n*I am currently unable to connect to the local Ollama AI model (or Hugging Face cloud API). Showing the relevant textbook passages directly:*\n\n---\n\n"
+        mock_answer = self._get_mock_offline_response(user_prompt, only_excerpts=True)
+        # Yield word by word with micro-delay to simulate typing animation
+        for word in mock_answer.split(" "):
+            yield word + " "
+            time.sleep(0.02)
+    
+    def _call_claude_fallback(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Optional[LLMResponse]:
+        """Try calling Claude if API key is present."""
+        if settings.ANTHROPIC_API_KEY:
+            try:
+                from backend.llm.claude_client import ClaudeClient
+                claude = ClaudeClient()
+                return claude.ask(system_prompt, user_prompt, max_tokens)
+            except Exception as e:
+                logger.warning(f"Claude fallback failed: {e}")
+        return None
+
+    def _call_hf_inference_api(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Optional[str]:
+        """Call Hugging Face Serverless Inference API as a fallback."""
+        model_id = "Qwen/Qwen2.5-7B-Instruct"
+        url = f"https://api-inference.huggingface.co/models/{model_id}/v1/chat/completions"
+        
         payload = {
-            "model": self.model,
+            "model": model_id,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "stream": True,
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": self.temperature
-            }
+            "max_tokens": max_tokens,
+            "temperature": self.temperature,
+            "stream": False
         }
         
-        try:
-            response = requests.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=self.timeout,
-                stream=True
-            )
-            response.raise_for_status()
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
             
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        data = json.loads(line)
-                        token = data.get("message", {}).get("content", "")
-                        if token:
-                            yield token
-                    except json.JSONDecodeError:
-                        continue
-                        
-        except requests.exceptions.ConnectionError:
-            yield "[Error: Cannot connect to Ollama. Run 'ollama serve' first.]"
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"]
+            else:
+                logger.warning(f"HF Inference API status {response.status_code}: {response.text}")
         except Exception as e:
-            yield f"[Error: {str(e)}]"
-    
+            logger.warning(f"HF Inference API connection failed: {e}")
+        return None
+
+    def _stream_hf_inference_api(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Generator[str, None, None]:
+        """Stream from Hugging Face Serverless Inference API as a fallback."""
+        model_id = "Qwen/Qwen2.5-7B-Instruct"
+        url = f"https://api-inference.huggingface.co/models/{model_id}/v1/chat/completions"
+        
+        payload = {
+            "model": model_id,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": self.temperature,
+            "stream": True
+        }
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+            
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10, stream=True)
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        line_str = line.decode('utf-8')
+                        if line_str.startswith("data: "):
+                            data_content = line_str[6:]
+                            if data_content.strip() == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(data_content)
+                                token = data["choices"][0]["delta"].get("content", "")
+                                if token:
+                                    yield token
+                            except Exception:
+                                continue
+            else:
+                logger.warning(f"HF Inference API status {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.warning(f"HF Inference API streaming failed: {e}")
+
+    def _get_mock_offline_response(self, user_prompt: str, only_excerpts: bool = False) -> str:
+        """Parse textbook excerpts from the prompt and return them as a clean structured document."""
+        excerpts = []
+        
+        parts = re.split(r'\[(?:Textbook )?Excerpt \d+\]', user_prompt)
+        headers = re.findall(r'\[(?:Textbook )?Excerpt \d+\]', user_prompt)
+        
+        for i, part in enumerate(parts[1:]):
+            if "Question:" in part:
+                part = part.split("Question:")[0]
+                
+            header = headers[i] if i < len(headers) else "[Excerpt]"
+            lines = part.strip().split("\n")
+            metadata = []
+            content_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith(("Chapter:", "Section:", "Page:")):
+                    metadata.append(stripped)
+                else:
+                    content_lines.append(line)
+                    
+            metadata_str = " | ".join(metadata) if metadata else ""
+            content_str = "\n".join(content_lines).strip()
+            
+            excerpt_md = f"### 📖 {header.strip('[]')}"
+            if metadata_str:
+                excerpt_md += f" ({metadata_str})"
+            excerpt_md += f"\n\n{content_str}\n"
+            excerpts.append(excerpt_md)
+            
+        if not excerpts:
+            excerpts_text = "*I could not find any relevant excerpts in the query context. Please make sure to search an uploaded textbook.*"
+        else:
+            excerpts_text = "\n".join(excerpts)
+            
+        if only_excerpts:
+            return excerpts_text
+            
+        return f"""📢 **[Offline Reader Mode]**
+*I am currently unable to connect to the local Ollama AI model (or Hugging Face cloud API). Showing the relevant textbook passages directly:*
+
+---
+
+{excerpts_text}
+
+---
+💡 *Note: To enable AI synthesis and explanations, make sure Ollama is running (`ollama serve`) and the model is created.*"""
+
     @staticmethod
     def estimate_tokens(text: str) -> int:
         """
@@ -261,15 +443,13 @@ class OllamaClient:
     def validate_connection(self) -> bool:
         """
         Validate that Ollama server is running and model is available.
-        
-        Returns:
-            True if Ollama is reachable and model exists
+        Falls back to reporting always-run capability if offline.
         """
         try:
             # Check if Ollama is running
             response = requests.get(
                 f"{self.base_url}/api/tags",
-                timeout=5
+                timeout=2
             )
             response.raise_for_status()
             
@@ -277,7 +457,6 @@ class OllamaClient:
             models = response.json().get("models", [])
             model_names = [m.get("name", "") for m in models]
             
-            # Check for exact match or partial match (e.g., "mistral:latest" matches "mistral:latest")
             model_found = any(
                 self.model in name or name.startswith(self.model.split(":")[0])
                 for name in model_names
@@ -287,23 +466,18 @@ class OllamaClient:
                 logger.info(f"✅ Ollama connected, model '{self.model}' available")
                 return True
             else:
-                available = ", ".join(model_names) if model_names else "none"
                 logger.warning(
                     f"⚠️  Ollama running but model '{self.model}' not found. "
-                    f"Available: {available}. "
-                    f"Download with: ollama pull {self.model}"
+                    f"Will use base model or cloud/mock fallbacks."
                 )
-                return True  # Server is up, just need to pull model
+                return True
                 
-        except requests.exceptions.ConnectionError:
-            logger.error(
-                f"❌ Cannot connect to Ollama at {self.base_url}. "
-                f"Start it with: ollama serve"
-            )
-            return False
         except Exception as e:
-            logger.error(f"❌ Ollama validation failed: {e}")
-            return False
+            logger.info(
+                f"ℹ️  Cannot connect to Ollama at {self.base_url}. "
+                f"App will use cloud/mock fallbacks (Always-Run Mode active)."
+            )
+            return True
     
     @classmethod
     def validate_api_key(cls) -> bool:
