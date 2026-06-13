@@ -15,12 +15,13 @@ app_port: 7860
 
 ## 🎖️ Build Small 2026 Merit Badges
 
-We have successfully earned all **5 merit badges** for the **Build Small 2026** hackathon:
+We have successfully earned all **6 merit badges** for the **Build Small 2026** hackathon:
 * 🔌 **Off the Grid** — No cloud APIs used; runs fully offline with local Ollama/FastAPI backend
 * 🦙 **Llama Champion** — Runs via standard llama.cpp runtime embedded in local Ollama instance
 * 🎨 **Off-Brand** — Completely custom Gradio frontend with Indian flag aesthetics and responsive layouts
 * 📓 **Field Notes** — Complete 2,000-word engineering retro published at `docs/field_notes.md`
 * 🎯 **Well-Tuned** — Mistral 7B fine-tuned on 103 student Q&A pairs via Modal A10G GPU (LoRA/QLoRA)
+* 📡 **Sharing is Caring** — Publicly shared agent traces of the 5-Stage Pruning pipeline at [docs/traces.jsonl](file:///d:/Paradox-vidyabot/docs/traces.jsonl)
 
 ---
 
