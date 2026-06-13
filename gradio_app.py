@@ -818,14 +818,16 @@ def create_demo() -> gr.Blocks:
                 submit_btn.click(
                     fn=process_query,
                     inputs=[question_input, textbook_dropdown, language_dropdown, mode_dropdown],
-                    outputs=[answer_output, metrics_output, source_output, debug_output]
+                    outputs=[answer_output, metrics_output, source_output, debug_output],
+                    queue=True
                 )
                 
                 # Also trigger on Enter key
                 question_input.submit(
                     fn=process_query,
                     inputs=[question_input, textbook_dropdown, language_dropdown, mode_dropdown],
-                    outputs=[answer_output, metrics_output, source_output, debug_output]
+                    outputs=[answer_output, metrics_output, source_output, debug_output],
+                    queue=True
                 )
             
             # ===== TAB 2: Upload Textbook =====
@@ -920,6 +922,7 @@ def create_demo() -> gr.Blocks:
         </div>
         """)
     
+    demo.queue(max_size=20)
     return demo
 
 
