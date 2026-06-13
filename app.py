@@ -28,13 +28,20 @@ if sys.platform != "win32":
         )
         time.sleep(3)
         
-        # Pull base model in the background as fallback
-        print("📥 Ensuring mistral:latest is available...")
-        subprocess.Popen(
-            ["ollama", "pull", "mistral:latest"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        # Pull a tiny model that works on cpu-basic (352MB vs 4.1GB for mistral)
+        print("📥 Pulling qwen2.5:0.5b (tiny, CPU-friendly)...")
+        result = subprocess.run(
+            ["ollama", "pull", "qwen2.5:0.5b"],
+            timeout=120,
+            capture_output=True,
+            text=True,
         )
+        if result.returncode == 0:
+            print("✅ qwen2.5:0.5b ready!")
+        else:
+            print(f"⚠️ Model pull failed: {result.stderr[:200]}")
+    except subprocess.TimeoutExpired:
+        print("⚠️ Model pull timed out after 120s, will use HF API fallback")
     except Exception as e:
         print(f"⚠️ Could not start Ollama: {e}")
 else:

@@ -305,101 +305,92 @@ class OllamaClient:
         "microsoft/Phi-3-mini-4k-instruct",
     ]
 
-    def _call_hf_inference_api(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Optional[str]:
-        """Call Hugging Face Serverless Inference API as a fallback. Tries multiple models."""
+    def _get_hf_client(self):
+        """Get a HuggingFace InferenceClient instance.
+        Uses huggingface_hub library which routes through router.huggingface.co
+        (reachable from HF Spaces) instead of api-inference.huggingface.co (blocked by DNS).
+        """
         token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_TOKEN")
-        headers = {"Content-Type": "application/json"}
         if token:
-            headers["Authorization"] = f"Bearer {token}"
             print(f"[HF API] Using HF_TOKEN (first 8 chars): {token[:8]}...")
         else:
-            print("[HF API] WARNING: No HF_TOKEN found in environment. API may be rate-limited.")
+            print("[HF API] WARNING: No HF_TOKEN found. API may be rate-limited.")
+        try:
+            from huggingface_hub import InferenceClient
+            return InferenceClient(token=token)
+        except ImportError:
+            print("[HF API] huggingface_hub not installed, cannot use InferenceClient")
+            return None
+
+    def _call_hf_inference_api(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Optional[str]:
+        """Call HF Inference API via huggingface_hub InferenceClient. Tries multiple models."""
+        client = self._get_hf_client()
+        if client is None:
+            return None
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
 
         for model_id in self.HF_FALLBACK_MODELS:
-            url = f"https://api-inference.huggingface.co/models/{model_id}/v1/chat/completions"
-            payload = {
-                "model": model_id,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "max_tokens": max_tokens,
-                "temperature": self.temperature,
-                "stream": False
-            }
-            print(f"[HF API] Trying model: {model_id} (timeout=45s)...")
+            print(f"[HF API] Trying model: {model_id}...")
             try:
-                response = requests.post(url, json=payload, headers=headers, timeout=45)
-                print(f"[HF API] {model_id} → status {response.status_code}")
-                if response.status_code == 200:
-                    answer = response.json()["choices"][0]["message"]["content"]
+                response = client.chat_completion(
+                    model=model_id,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=self.temperature,
+                )
+                answer = response.choices[0].message.content
+                if answer:
                     print(f"[HF API] ✅ Success with {model_id} ({len(answer)} chars)")
                     return answer
                 else:
-                    print(f"[HF API] {model_id} error body: {response.text[:300]}")
-                    logger.warning(f"HF Inference API {model_id} status {response.status_code}: {response.text[:200]}")
-            except requests.exceptions.Timeout:
-                print(f"[HF API] {model_id} timed out after 45s")
-                logger.warning(f"HF Inference API {model_id} timed out")
+                    print(f"[HF API] {model_id} returned empty answer")
             except Exception as e:
-                print(f"[HF API] {model_id} connection error: {e}")
-                logger.warning(f"HF Inference API {model_id} failed: {e}")
-        
+                print(f"[HF API] {model_id} failed: {e}")
+                logger.warning(f"HF InferenceClient {model_id} failed: {e}")
+
         print("[HF API] ❌ All models failed.")
         return None
 
     def _stream_hf_inference_api(self, system_prompt: str, user_prompt: str, max_tokens: int) -> Generator[str, None, None]:
-        """Stream from Hugging Face Serverless Inference API as a fallback. Tries multiple models."""
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_TOKEN")
-        headers = {"Content-Type": "application/json"}
-        if hf_token:
-            headers["Authorization"] = f"Bearer {hf_token}"
+        """Stream from HF Inference API via huggingface_hub InferenceClient. Tries multiple models."""
+        client = self._get_hf_client()
+        if client is None:
+            return
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
 
         for model_id in self.HF_FALLBACK_MODELS:
-            url = f"https://api-inference.huggingface.co/models/{model_id}/v1/chat/completions"
-            payload = {
-                "model": model_id,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "max_tokens": max_tokens,
-                "temperature": self.temperature,
-                "stream": True
-            }
-            print(f"[HF Stream] Trying model: {model_id} (timeout=45s)...")
+            print(f"[HF Stream] Trying model: {model_id}...")
             try:
-                response = requests.post(url, json=payload, headers=headers, timeout=45, stream=True)
-                print(f"[HF Stream] {model_id} → status {response.status_code}")
-                if response.status_code == 200:
-                    yielded_any = False
-                    for line in response.iter_lines():
-                        if line:
-                            line_str = line.decode('utf-8')
-                            if line_str.startswith("data: "):
-                                data_content = line_str[6:]
-                                if data_content.strip() == "[DONE]":
-                                    break
-                                try:
-                                    data = json.loads(data_content)
-                                    tok = data["choices"][0]["delta"].get("content", "")
-                                    if tok:
-                                        yielded_any = True
-                                        yield tok
-                                except Exception:
-                                    continue
-                    if yielded_any:
-                        print(f"[HF Stream] ✅ Completed streaming from {model_id}")
-                        return  # Success — stop trying other models
+                stream = client.chat_completion(
+                    model=model_id,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=self.temperature,
+                    stream=True,
+                )
+                yielded_any = False
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        tok = chunk.choices[0].delta.content
+                        yielded_any = True
+                        yield tok
+                if yielded_any:
+                    print(f"[HF Stream] ✅ Completed streaming from {model_id}")
+                    return  # Success — stop trying other models
                 else:
-                    print(f"[HF Stream] {model_id} error: {response.text[:300]}")
-                    logger.warning(f"HF stream {model_id} status {response.status_code}")
-            except requests.exceptions.Timeout:
-                print(f"[HF Stream] {model_id} timed out after 45s")
+                    print(f"[HF Stream] {model_id} streamed but yielded no content")
             except Exception as e:
-                print(f"[HF Stream] {model_id} error: {e}")
+                print(f"[HF Stream] {model_id} failed: {e}")
                 logger.warning(f"HF stream {model_id} failed: {e}")
-        
+
         print("[HF Stream] ❌ All models failed for streaming.")
 
     def _get_mock_offline_response(self, user_prompt: str, only_excerpts: bool = False) -> str:
