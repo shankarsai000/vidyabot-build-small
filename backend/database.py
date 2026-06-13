@@ -285,12 +285,13 @@ class PruningResult:
     """DTO for context pruning output."""
     def __init__(self, chunks: list, total_tokens: int, 
                  baseline_tokens: int = 2000, pruning_ratio: float = 0.0,
-                 stage_timings: dict = None):
+                 stage_timings: dict = None, stage_stats: dict = None):
         self.chunks = chunks
         self.total_tokens = total_tokens
         self.baseline_tokens = baseline_tokens
         self.pruning_ratio = pruning_ratio  # e.g., 0.80 = 80% reduction
         self.stage_timings = stage_timings or {}
+        self.stage_stats = stage_stats or {}
         self.tokens_saved = baseline_tokens - total_tokens
     
     def to_dict(self):
